@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Multi-Chain Token App</title>
+  <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tronweb/dist/TronWeb.js"></script>
+
+  <!-- ABI imports -->
+  <script src="abis/ethAbi.js"></script>
+  <script src="abis/bscAbi.js"></script>
+  <script src="abis/tronAbi.js"></script>
+
+ <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #0f0f0f 0%, #1e1e1e 100%);
+      color: #ffffff;
+      text-align: center;
+      padding: 20px;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      font-size: 22px;
+      color: #00e6e6;
+    }
+
+    .container {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 20px;
+      border-radius: 15px;
+      display: inline-block;
+      max-width: 480px;
+      width: 100%;
+    }
+
+    select, button, input {
+      padding: 10px 14px;
+      margin: 8px 0;
+      border-radius: 8px;
+      font-size: 14px;
+      border: none;
+      width: 90%;
+      max-width: 360px;
+    }
+
+    input, select {
+      
+      color: black;
+    }
+
+    select {
+      appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg fill='white' height='12' viewBox='0 0 24 24' width='12' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      background-size: 12px;
+      padding-right: 30px;
+    }
+
+    button {
+      background-color: #00bcd4;
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #0097a7;
+    }
+
+    #wallet-address, #token-balance {
+      margin-top: 15px;
+      font-size: 16px;
+      color: #aef;
+    }
+
+    .action-group {
+      margin-top: 20px;
+    }
+
+    .token-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background-color: #121212;
+      border: 1px solid #2e2e2e;
+      border-radius: 10px;
+      padding: 15px;
+      max-width: 360px;
+      margin: 15px auto;
+      box-shadow: 0 0 8px rgba(0,255,255,0.08);
+    }
+
+    .token-img {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+    }
+
+    .token-info {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .token-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #00e6e6;
+    }
+
+    .token-balance {
+      font-size: 14px;
+      color: #10b981;
+      margin-top: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Multi-Chain Token App</h1>
+
+    <select id="chain-select">
+      <option value="eth">Ethereum</option>
+      <option value="bsc">BNB Chain</option>
+      <option value="tron">Tron Network</option>
+    </select>
+
+    <button onclick="connectWallet()">Connect Wallet</button>
+    <button onclick="mintToken()">Mint Token</button>
+
+    <div class="action-group">
+      <input type="text" id="transfer-to" placeholder="Recipient address (0x... or T...)" />
+      <input type="number" id="transfer-amount" placeholder="Amount to transfer" />
+      <button onclick="transferToken()">Transfer Token</button>
+    </div>
+
+    <p id="wallet-address">Not connected</p>
+    <div class="token-card">
+    <img class="token-img" src="" alt="USDT Token" />
+    <div class="token-info">
+      <div class="token-title">Tether (USDT)</div>
+      <div id="token-balance" class="token-balance">Token Balance: —</div>
+    </div>
+  </div>
+  </div>
+
+  <script>
+    let web3;
+    let contract;
+    let selectedChain;
+    let userAddress;
+    let tronWeb;
+
+    const CONTRACTS = {
+      eth: {
+        address: "contract address", // replace
+        abi: ethAbi,
+        chainId: "0x1" // or "0xaa36a7" for Sepolia
+      },
+      bsc: {
+        address: "contract address", // replace
+        abi: bscAbi,
+        chainId: "0x38"
+      },
+      tron: {
+        address: "contract address", // replace
+        abi: tronAbi
+      }
+    };
+
+    async function connectWallet() {
+      selectedChain = document.getElementById('chain-select').value;
+
+      if (selectedChain === 'tron') {
+        if (!window.tronWeb || !tronWeb.defaultAddress.base58) {
+          alert('Install and unlock TronLink wallet');
+          return;
+        }
+        tronWeb = window.tronWeb;
+        userAddress = tronWeb.defaultAddress.base58;
+        contract = await tronWeb.contract(CONTRACTS.tron.abi, CONTRACTS.tron.address);
+        document.getElementById('wallet-address').innerText = `Connected: ${userAddress}`;
+        getTronTokenBalance();
+        return;
+      }
+
+      if (window.ethereum) {
+        await ethereum.request({ method: 'eth_requestAccounts' });
+        web3 = new Web3(window.ethereum);
+        const accounts = await web3.eth.getAccounts();
+        userAddress = accounts[0];
+
+        const chainConfig = CONTRACTS[selectedChain];
+
+        try {
+          await ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: chainConfig.chainId }],
+          });
+        } catch (err) {
+          alert("Switch network failed.");
+        }
+
+        contract = new web3.eth.Contract(chainConfig.abi, chainConfig.address);
+        document.getElementById('wallet-address').innerText = `Connected: ${userAddress}`;
+        getEvmTokenBalance();
+      } else {
+        alert("Please install MetaMask");
+      }
+    }
+    
+async function getEvmTokenBalance() {
+  try {
+    const balance = await contract.methods.balanceOf(userAddress).call();
+    const decimals = await contract.methods.decimals().call();
+    const formatted = (BigInt(balance) / BigInt(10 ** decimals)).toString(); // precise integer division
+    document.getElementById('token-balance').innerText = `Token Balance: ${formatted}`;
+  } catch (err) {
+    document.getElementById('token-balance').innerText = `Token Balance: —`;
+    console.warn("Cannot fetch balance:", err);
+  }
+}
+
+
+
+    async function getTronTokenBalance() {
+      try {
+        const balance = await contract.balanceOf(userAddress).call();
+        document.getElementById('token-balance').innerText = `Token Balance: ${balance}`;
+      } catch (err) {
+        document.getElementById('token-balance').innerText = `Token Balance: —`;
+        console.warn("Cannot fetch Tron balance:", err);
+      }
+    }
+
+    async function mintToken() {
+  if (!contract || !userAddress) return alert("Connect wallet first");
+
+  const rawAmount = prompt("Enter number of tokens to mint:", "10");
+  if (!rawAmount || isNaN(rawAmount)) return alert("Invalid amount");
+
+  try {
+    let decimals;
+
+    if (selectedChain === 'tron') {
+      decimals = await contract.decimals().call();
+    } else {
+      decimals = await contract.methods.decimals().call();
+    }
+
+    decimals = parseInt(decimals);  // convert to number
+    const factor = 10 ** decimals;
+    const amount = BigInt(parseFloat(rawAmount) * factor).toString();
+
+    if (selectedChain === 'tron') {
+      await contract.mint(userAddress, amount).send();
+      alert("✅ Minted on Tron");
+      getTronTokenBalance();
+    } else {
+      await contract.methods.mint(userAddress, amount).send({ from: userAddress });
+      alert(`✅ Minted on ${selectedChain.toUpperCase()}`);
+      getEvmTokenBalance();
+    }
+  } catch (err) {
+    console.error(err);
+    alert("❌ Minting failed");
+  }
+}
+
+
+    async function transferToken() {
+    const to = document.getElementById('transfer-to').value.trim();
+    const rawAmount = document.getElementById('transfer-amount').value.trim();
+
+    if (!to || !rawAmount || isNaN(rawAmount)) {
+      return alert("❌ Invalid address or amount");
+    }
+
+    const decimals = 6; // 🔥 Your token's decimals
+    const amount = (BigInt(Math.floor(parseFloat(rawAmount) * 10 ** decimals))).toString();
+
+    try {
+      if (selectedChain === 'tron') {
+        await contract.transfer(to, amount).send(); // TronWeb style
+        alert("✅ Token transferred on Tron");
+        getTronTokenBalance();
+      } else {
+        await contract.methods.transfer(to, amount).send({ from: userAddress }); // Web3 style
+        alert(`✅ Token transferred on ${selectedChain.toUpperCase()}`);
+        getEvmTokenBalance();
+      }
+    } catch (err) {
+      console.error("❌ Transfer Error:", err);
+      alert("❌ Token transfer failed");
+    }
+  }
+  async function addTokenToMetaMask() {
+  if (!selectedChain || !CONTRACTS[selectedChain]) {
+    return alert("Please connect your wallet first.");
+  }
+
+  const tokenAddress = CONTRACTS[selectedChain].address;
+  const tokenSymbol = ""; // or whatever your token symbol is
+  const tokenDecimals = 6;    // use your token's actual decimals
+  const tokenImage = "";      // Optional: add image URL here
+
+  try {
+    const wasAdded = await window.ethereum.request({
+      method: 'wallet_watchAsset',
+      params: {
+        type: 'ERC20',
+        options: {
+          address: tokenAddress,
+          symbol: tokenSymbol,
+          decimals: tokenDecimals,
+          image: tokenImage,
+        },
+      },
+    });
+
+    if (wasAdded) {
+      alert("🦊 Token added to MetaMask!");
+    } else {
+      alert("❌ Token not added");
+    }
+  } catch (error) {
+    console.error("Error adding token:", error);
+  }
+}
+
+
+
+  </script>
+</body>
+</html>
